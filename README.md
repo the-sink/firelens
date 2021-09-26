@@ -22,4 +22,4 @@ The output log will provide you with the URL to your service (often http://127.0
 
 # Disclaimer
 
-I, nor this repository, have any association with the Seattle Fire Department or any government entity.
+I, nor this repository, have any official association with the Seattle Fire Department or any government entity.
