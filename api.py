@@ -6,6 +6,7 @@ import config
 import classes
 
 from fastapi import FastAPI, Request
+from typing import Optional
 
 from bs4 import BeautifulSoup, Tag
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -142,9 +143,9 @@ def get_incident_coordinates(request: Request, incident_number: str):
     return location
 
 
-@app.get("/incident/{incident_number}/cameras", tags=["Incidents"], response_model=list[classes.Camera], description="Attempts to locate nearby traffic cameras that could be around the incident. There are not cameras at every street corner - this endpoint is often not successful, but will always return the geographically closest cameras regardless.")
+@app.get("/incident/{incident_number}/cameras", tags=["Incidents"], description="Attempts to locate nearby traffic cameras that could be around the incident. There are not cameras at every street corner - this endpoint is often not successful. The distance_threshold parameter determines how likely the endpoint is to return an error if a camera is too far. Set this to something high to ignore distance checks and display the nearest camera anyways.")
 @limiter.limit(config.rate_limit)
-def get_nearby_cameras(request: Request, incident_number: str):
+def get_nearby_cameras(request: Request, incident_number: str, distance_threshold: Optional[float] = 0.4):
     closest = sys.maxsize
     closest_object = None
 
@@ -156,7 +157,13 @@ def get_nearby_cameras(request: Request, incident_number: str):
         if (dist < closest):
             closest = dist
             closest_object = object['Cameras']
-    return closest_object
+    print(closest)
+    if closest < distance_threshold and closest_object != None:
+        return closest_object
+    else:
+        return {
+            'error': 'No cameras are near the location of this incident.'
+        }
 
 # Lists #
 

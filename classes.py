@@ -22,10 +22,3 @@ class Unit(BaseModel):
     dispatched: Optional[str] = None
     arrived: Optional[str] = None
     in_service: Optional[str] = None
-
-
-class Camera(BaseModel): # For now this is just for display purposes on the docs, once I get around to updating the cameras endpoint this will be changed
-    Id: str
-    Description: str
-    ImageUrl: str
-    Type: str
