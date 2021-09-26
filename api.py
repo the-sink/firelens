@@ -2,16 +2,18 @@ import requests
 import json
 import sys
 import math
+import config
+import classes
 
-from typing import Optional
 from fastapi import FastAPI, Request
-from pydantic import BaseModel
 
 from bs4 import BeautifulSoup, Tag
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from geopy.geocoders import Nominatim
+
+import uvicorn
 
 geolocator = Nominatim(user_agent="http")
 limiter = Limiter(key_func=get_remote_address)
@@ -37,7 +39,7 @@ app = FastAPI(
     
     All endpoints are limited to 10 requests per minute.
     """,
-    version = "0.0.4",
+    version = config.version,
     license_info={
         "name": "MIT License",
         "url": "https://www.mit.edu/~amini/LICENSE.md"
@@ -49,9 +51,7 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-### Root Variables & Classes ###
-
-rate_limit = "10/minute"
+### Root Variables ###
 
 P_mult = 0.017453292519943295
 
@@ -60,35 +60,6 @@ location_listing_url = "https://data.seattle.gov/resource/fire-911.json"
 camera_list_url = "https://web6.seattle.gov/Travelers/api/Map/Data?zoomId=14&type=2"
 
 camera_list = requests.get(camera_list_url).json()['Features']
-
-class Location(BaseModel):
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    source: Optional[str] = None
-
-
-class Incident(BaseModel):
-    incident_number: Optional[str] = None
-    date: Optional[str] = None
-    time: Optional[str] = None
-    address: Optional[str] = None
-    incident_type: Optional[str] = None
-    alarm_level: Optional[str] = None
-
-
-class Unit(BaseModel):
-    name: Optional[str] = None
-    primary: Optional[bool] = None
-    dispatched: Optional[str] = None
-    arrived: Optional[str] = None
-    in_service: Optional[str] = None
-
-
-class Camera(BaseModel): # For now this is just for display purposes on the docs, once I get around to updating the cameras endpoint this will be changed
-    Id: str
-    Description: str
-    ImageUrl: str
-    Type: str
 
 ### Internal Methods ###
 
@@ -109,12 +80,12 @@ def get_incident_details_soup(incident_number: str):
 
 # Incidents #
 
-@app.get("/incident/{incident_number}", tags=["Incidents"], response_model=Incident)
-@limiter.limit(rate_limit)
+@app.get("/incident/{incident_number}", tags=["Incidents"], response_model=classes.Incident)
+@limiter.limit(config.rate_limit)
 def get_incident_details(request: Request, incident_number: str):
     soup = get_incident_details_soup(incident_number)
     details = soup.find_all('table')[2].find_all('tr')
-    incident: Incident = Incident()
+    incident: classes.Incident = classes.Incident()
     incident.incident_number = format_down(details[0].get_text(), "Incident Number:")
     incident.date = format_down(details[1].get_text(), "Incident Date:")
     incident.time = format_down(details[2].get_text(), "Time:")
@@ -125,16 +96,16 @@ def get_incident_details(request: Request, incident_number: str):
     return incident
 
 
-@app.get("/incident/{incident_number}/units", tags=["Incidents"], response_model=list[Unit])
-@limiter.limit(rate_limit)
+@app.get("/incident/{incident_number}/units", tags=["Incidents"], response_model=list[classes.Unit])
+@limiter.limit(config.rate_limit)
 def get_incident_units(request: Request, incident_number: str):
     soup = get_incident_details_soup(incident_number)
     unit_list = soup.find_all('table')[3]
     unit_list.select_one('tr').decompose()
-    units: Unit = []
+    units: classes.Unit = []
     for unit in unit_list:
         if isinstance(unit, Tag):
-            object = Unit()
+            object = classes.Unit()
 
             list_items = unit.find_all('p')
             object.name = list_items[0].get_text().strip()
@@ -150,12 +121,12 @@ def get_incident_units(request: Request, incident_number: str):
     return units
 
 
-@app.get("/incident/{incident_number}/location", tags=["Incidents"], response_model=Location, description="This endpoint pulls from [data.seattle.gov](data.seattle.gov) if the incident is recent, otherwise it will fall back to geocoding the address using Geopy/Nominatim. Check the \"source\" element to check which one was used.")
-@limiter.limit(rate_limit)
+@app.get("/incident/{incident_number}/location", tags=["Incidents"], response_model=classes.Location, description="This endpoint pulls from [data.seattle.gov](data.seattle.gov) if the incident is recent, otherwise it will fall back to geocoding the address using Geopy/Nominatim. Check the \"source\" element to check which one was used.")
+@limiter.limit(config.rate_limit)
 def get_incident_coordinates(request: Request, incident_number: str):
     list_response = requests.get(location_listing_url)
     data = json.loads(list_response.text) # Cannot use list_response.json() for some reason?
-    location = Location()
+    location = classes.Location()
     for entry in data:
         if entry['incident_number'] == incident_number: # Use coordinates provided officially by API
             location.latitude = float(entry['latitude'])
@@ -171,8 +142,8 @@ def get_incident_coordinates(request: Request, incident_number: str):
     return location
 
 
-@app.get("/incident/{incident_number}/cameras", tags=["Incidents"], response_model=list[Camera], description="Attempts to locate nearby traffic cameras that could be around the incident. There are not cameras at every street corner - this endpoint is often not successful, but will always return the geographically closest cameras regardless.")
-@limiter.limit(rate_limit)
+@app.get("/incident/{incident_number}/cameras", tags=["Incidents"], response_model=list[classes.Camera], description="Attempts to locate nearby traffic cameras that could be around the incident. There are not cameras at every street corner - this endpoint is often not successful, but will always return the geographically closest cameras regardless.")
+@limiter.limit(config.rate_limit)
 def get_nearby_cameras(request: Request, incident_number: str):
     closest = sys.maxsize
     closest_object = None
@@ -190,11 +161,17 @@ def get_nearby_cameras(request: Request, incident_number: str):
 # Lists #
 
 @app.get("/incidents", tags=["Lists"])
-@limiter.limit(rate_limit)
+@limiter.limit(config.rate_limit)
 def get_incidents(request: Request):
     return []
 
 @app.get("/cameras", tags=["Lists"])
-@limiter.limit(rate_limit)
+@limiter.limit(config.rate_limit)
 def get_all_traffic_cameras(request: Request):
     return []
+
+
+### Start Server ###
+
+if __name__ == "__main__":
+    uvicorn.run("api:app", host=config.host_address, port=config.server_port, log_level=config.log_level, reload=config.live_reload)
