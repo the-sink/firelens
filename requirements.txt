@@ -1,0 +1,6 @@
+fastapi
+pydantic
+bs4
+slowapi
+geopy
+uvicorn
