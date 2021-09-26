@@ -14,8 +14,12 @@ pip install -Ur requirements.txt
 ```
 
 Once installed, run the server with:
-```
+```md
 uvicorn api:app --reload
+
+# OR
+
+py api.py
 ```
 
 The output log will provide you with the URL to your service (often http://127.0.0.1:8000). Navigate to http://127.0.0.1:8000/docs to view the documentation on the API and test it out.
