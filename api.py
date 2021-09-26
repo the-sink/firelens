@@ -7,6 +7,7 @@ import classes
 
 from fastapi import FastAPI, Request
 from typing import Optional
+from datetime import datetime
 
 from bs4 import BeautifulSoup, Tag
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -68,6 +69,10 @@ def distance(lat1, lon1, lat2, lon2): # Haversine formula
     hav = 0.5 - math.cos((lat2-lat1)*P_mult)/2 + math.cos(lat1*P_mult)*math.cos(lat2*P_mult) * (1-math.cos((lon2-lon1)*P_mult)) / 2
     return 12742 * math.asin(math.sqrt(hav))
 
+def convert_time(time_string):
+    if time_string == None:
+        return None
+    return datetime.strptime(time_string, "%H:%M").strftime("%I:%M %p")
 
 def format_down(input_string: str, header: str):
     return input_string.replace(header, "").strip().replace("\n", "")
@@ -83,7 +88,7 @@ def get_incident_details_soup(incident_number: str):
 
 @app.get("/incident/{incident_number}", tags=["Incidents"], response_model=classes.Incident)
 @limiter.limit(config.rate_limit)
-def get_incident_details(request: Request, incident_number: str):
+def get_incident_details(request: Request, incident_number: str, use_12_hour_time: Optional[bool] = False):
     soup = get_incident_details_soup(incident_number)
     details = soup.find_all('table')[2].find_all('tr')
     incident: classes.Incident = classes.Incident()
@@ -94,12 +99,15 @@ def get_incident_details(request: Request, incident_number: str):
     incident.incident_type = format_down(details[4].get_text(), "Type:")
     incident.alarm_level = format_down(details[5].get_text(), "Alarm Level:")
 
+    if use_12_hour_time:
+        incident.time = convert_time(incident.time)
+
     return incident
 
 
 @app.get("/incident/{incident_number}/units", tags=["Incidents"], response_model=list[classes.Unit])
 @limiter.limit(config.rate_limit)
-def get_incident_units(request: Request, incident_number: str):
+def get_incident_units(request: Request, incident_number: str, use_12_hour_time: Optional[bool] = False):
     soup = get_incident_details_soup(incident_number)
     unit_list = soup.find_all('table')[3]
     unit_list.select_one('tr').decompose()
@@ -115,8 +123,14 @@ def get_incident_units(request: Request, incident_number: str):
             object.arrived = list_items[2].get_text().strip() or None
             object.in_service = list_items[3].get_text().strip() or None
 
+            if use_12_hour_time:
+                object.dispatched = convert_time(object.dispatched)
+                object.arrived = convert_time(object.arrived)
+                object.in_service = convert_time(object.in_service)
+
             if object.primary:
                 units.insert(0, object)
+                object.name = object.name.replace("*", "")
             else:
                 units.append(object)
     return units
@@ -167,12 +181,12 @@ def get_nearby_cameras(request: Request, incident_number: str, distance_threshol
 
 # Lists #
 
-@app.get("/incidents", tags=["Lists"])
+@app.get("/incidents", tags=["Lists"], response_model=list[classes.Incident], description = "Returns a list of Incident objects for today's date.")
 @limiter.limit(config.rate_limit)
-def get_incidents(request: Request):
+def get_today_incidents(request: Request):
     return []
 
-@app.get("/cameras", tags=["Lists"])
+@app.get("/cameras", tags=["Lists"], description = "Returns a list of all traffic cameras in the region as Camera objects.")
 @limiter.limit(config.rate_limit)
 def get_all_traffic_cameras(request: Request):
     return []
