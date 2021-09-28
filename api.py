@@ -2,13 +2,14 @@ import requests
 import json
 import sys
 import math
-import aiofiles
 
 from starlette.responses import FileResponse
 import config
 import classes
+import requests_cache
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from datetime import datetime, timedelta
 
@@ -22,6 +23,10 @@ import uvicorn
 
 geolocator = Nominatim(user_agent="http")
 limiter = Limiter(key_func=get_remote_address)
+cache = requests_cache.CachedSession(
+    'requests',
+    expire_after=timedelta(seconds=30)
+)
 
 ### Metadata ###
 
@@ -52,9 +57,18 @@ app = FastAPI(
     openapi_tags = tags
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+requests_cache.install_cache('requests')
 
 ### Root Variables ###
 
@@ -173,7 +187,6 @@ def get_nearby_cameras(request: Request, incident_number: str, distance_threshol
         if (dist < closest):
             closest = dist
             closest_object = object['Cameras']
-    print(closest)
     if closest < distance_threshold and closest_object != None:
         return closest_object
     else:
@@ -182,6 +195,7 @@ def get_nearby_cameras(request: Request, incident_number: str, distance_threshol
         }
 
 # Lists #
+# TODO: Incident list needs to handle duplicates (possibly a bug?) and clone entries in the log that are adding new units
 
 @app.get("/incidents", tags=["Lists"], response_model=list[classes.Incident], description = "Returns a list of all incidents for today's date, or for the specified date given in the endpoint's parameters.")
 @limiter.limit(config.rate_limit)
@@ -192,9 +206,14 @@ def get_incidents_for_date(request: Request, month: Optional[int] = None, day: O
     year = year or today.year
 
     page = requests.get(f"http://www2.seattle.gov/fire/realtime911/getRecsForDatePub.asp?incDate={month}%2F{day}%2F{year}&rad1=des").text
-    soup = BeautifulSoup(page, 'html.parser')
-    list = soup.find_all('table')[2]
+
     calls: classes.Incident = []
+    soup = BeautifulSoup(page, 'html.parser')
+
+    try:
+        list = soup.find_all('table')[2]
+    except IndexError:
+        return calls
 
     for call in list.find_all('tr'):
         incident_object = classes.Incident()

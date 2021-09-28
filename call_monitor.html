@@ -1,0 +1,42 @@
+<html><body>
+    <div id="mapdiv"></div>
+    <script src="http://www.openlayers.org/api/OpenLayers.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script>
+      var req = new XMLHttpRequest();
+
+      map = new OpenLayers.Map("mapdiv");
+      map.addLayer(new OpenLayers.Layer.OSM());
+  
+      var markers = new OpenLayers.Layer.Markers("Markers");
+      map.addLayer(markers);
+
+      function addMarker(lat, lon){
+        var lonLat = new OpenLayers.LonLat(lon, lat).transform(new OpenLayers.Projection("EPSG:4326"), map.getProjectionObject());
+        markers.addMarker(new OpenLayers.Marker(lonLat));
+      }
+
+      var lonLat = new OpenLayers.LonLat(-122.335167, 47.608013).transform(new OpenLayers.Projection("EPSG:4326"), map.getProjectionObject());
+      var zoom=12;
+      
+      map.setCenter(lonLat, zoom);
+
+      $.ajax({
+        url: "http://127.0.0.1:8000/incidents/active",
+        type: "GET",
+        success: function(result){
+          markers.clearMarkers();
+
+          for (var i = 0; i < result.length; i++) {
+            $.ajax({
+              url: "http://127.0.0.1:8000/incident/" + result[i].incident_number + "/location",
+              type: "GET",
+              success: function(result){
+                addMarker(result.latitude, result.longitude);
+              }
+            });
+          }
+        }
+      });
+    </script>
+  </body></html>

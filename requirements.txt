@@ -5,3 +5,4 @@ slowapi
 geopy
 uvicorn
 aiofiles
+requests_cache
