@@ -1,3 +1,7 @@
+<img src="assets/icon_full.png" align="right" height="84" />
+
+# firelens [![License](https://img.shields.io/github/license/the-sink/firelens)](https://github.com/the-sink/firelens/blob/main/LICENSE) [![Issues](https://img.shields.io/github/issues/the-sink/firelens)](https://github.com/the-sink/firelens/issues)
+
 # firelens
 A REST API with the intent of developing a user-friendly interface for obtaining information on fire department incidents around the city of Seattle.
 
