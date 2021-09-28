@@ -2,12 +2,15 @@ import requests
 import json
 import sys
 import math
+import aiofiles
+
+from starlette.responses import FileResponse
 import config
 import classes
 
 from fastapi import FastAPI, Request
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from bs4 import BeautifulSoup, Tag
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -76,7 +79,6 @@ def convert_time(time_string):
 
 def format_down(input_string: str, header: str):
     return input_string.replace(header, "").strip().replace("\n", "")
-
 
 def get_incident_details_soup(incident_number: str):
     incident_response = requests.get(incident_lookup_url + incident_number).text
@@ -181,16 +183,64 @@ def get_nearby_cameras(request: Request, incident_number: str, distance_threshol
 
 # Lists #
 
-@app.get("/incidents", tags=["Lists"], response_model=list[classes.Incident], description = "Returns a list of Incident objects for today's date.")
+@app.get("/incidents", tags=["Lists"], response_model=list[classes.Incident], description = "Returns a list of all incidents for today's date, or for the specified date given in the endpoint's parameters.")
 @limiter.limit(config.rate_limit)
-def get_today_incidents(request: Request):
-    return []
+def get_incidents_for_date(request: Request, month: Optional[int] = None, day: Optional[int] = None, year: Optional[int] = None):
+    today = datetime.now()
+    month = month or today.month
+    day = day or today.day
+    year = year or today.year
 
-@app.get("/cameras", tags=["Lists"], description = "Returns a list of all traffic cameras in the region as Camera objects.")
+    page = requests.get(f"http://www2.seattle.gov/fire/realtime911/getRecsForDatePub.asp?incDate={month}%2F{day}%2F{year}&rad1=des").text
+    soup = BeautifulSoup(page, 'html.parser')
+    list = soup.find_all('table')[2]
+    calls: classes.Incident = []
+
+    for call in list.find_all('tr'):
+        incident_object = classes.Incident()
+
+        incident_object.active = False
+
+        items = call.find_all('td', 'closed')
+
+        if len(items) < 1:
+            items = call.find_all('td', 'active')
+            incident_object.active = True
+
+        # dt = items[0].get_text()
+        incident_object.incident_number = items[1].get_text()
+        incident_object.alarm_level = items[2].get_text()
+        # units = items[3].get_text()
+        incident_object.address = items[4].get_text()
+        incident_object.incident_type = items[5].get_text()
+
+        calls.append(incident_object)
+
+    return calls
+
+
+
+@app.get("/incidents/active", tags=["Lists"], response_model=list[classes.Incident], description = "Returns a list of currently active incidents.")
+@limiter.limit(config.rate_limit)
+def get_active_incidents(request: Request):
+    yesterday = datetime.now() - timedelta(days=1)
+
+    today_calls = [call for call in get_incidents_for_date(request) if call.active]
+    yesterday_calls = [call for call in get_incidents_for_date(request, yesterday.month, yesterday.day, yesterday.year) if call.active] # also check yesterday - there's still a likely chance of active calls, especially if it's very early in the morning
+
+    return today_calls + yesterday_calls
+
+
+@app.get("/cameras", tags=["Lists"], response_model=list[classes.Camera], description = "Returns a list of all traffic cameras in the region as Camera objects.")
 @limiter.limit(config.rate_limit)
 def get_all_traffic_cameras(request: Request):
     return []
 
+# Non-API Endpoints #
+
+@app.get('/favicon.ico')
+def favicon():
+    return FileResponse('assets/favicon.ico')
 
 ### Start Server ###
 

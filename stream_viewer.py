@@ -9,7 +9,7 @@ import webbrowser
 # Will use the api to find nearby traffic cameras and display them in your browser as video streams (or in the case of wsdot, images)
 # This is just an experiment! It's not a part of the actual api.
 
-nearest_cameras = requests.get(f"http://127.0.0.1:8000/incident/{sys.argv[1]}/cameras").json()
+nearest_cameras = requests.get(f"http://127.0.0.1:8000/incident/{sys.argv[1]}/cameras?distance_threshold=0.5").json()
 
 if 'error' in nearest_cameras:
     print("No nearby cameras are available for that incident. Stopping...")

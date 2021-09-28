@@ -14,6 +14,7 @@ class Incident(BaseModel):
     address: Optional[str] = None
     incident_type: Optional[str] = None
     alarm_level: Optional[str] = None
+    active: Optional[bool] = None
 
 
 class Unit(BaseModel):
@@ -22,3 +23,11 @@ class Unit(BaseModel):
     dispatched: Optional[str] = None
     arrived: Optional[str] = None
     in_service: Optional[str] = None
+
+class Camera(BaseModel):
+    id: Optional[str] = None
+    location: Optional[str] = None
+    image_url: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    operator: Optional[str] = None
