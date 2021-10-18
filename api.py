@@ -8,7 +8,7 @@ import config
 import classes
 import requests_cache
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from datetime import datetime, timedelta
@@ -25,10 +25,12 @@ geolocator = Nominatim(user_agent="http")
 limiter = Limiter(key_func=get_remote_address)
 cache = requests_cache.CachedSession(
     'requests',
-    expire_after=timedelta(seconds=30)
+    cache_control=True,
+    expire_after=timedelta(seconds=30),
+    match_headers=True
 )
 
-### Metadata ###
+### FastAPI app configuration ###
 
 tags = [
     {
@@ -106,7 +108,10 @@ def get_incident_details_soup(incident_number: str):
 @limiter.limit(config.rate_limit)
 def get_incident_details(request: Request, incident_number: str, use_12_hour_time: Optional[bool] = False):
     soup = get_incident_details_soup(incident_number)
-    details = soup.find_all('table')[2].find_all('tr')
+    try:
+        details = soup.find_all('table')[2].find_all('tr')
+    except IndexError:
+        raise HTTPException(status_code=400, detail="Could not read incident data (invalid incident number?)")
     incident: classes.Incident = classes.Incident()
     incident.incident_number = format_down(details[0].get_text(), "Incident Number:")
     incident.date = format_down(details[1].get_text(), "Incident Date:")
@@ -125,7 +130,10 @@ def get_incident_details(request: Request, incident_number: str, use_12_hour_tim
 @limiter.limit(config.rate_limit)
 def get_incident_units(request: Request, incident_number: str, use_12_hour_time: Optional[bool] = False):
     soup = get_incident_details_soup(incident_number)
-    unit_list = soup.find_all('table')[3]
+    try:
+        unit_list = soup.find_all('table')[3]
+    except IndexError:
+        raise HTTPException(status_code=400, detail="Could not read incident data (invalid incident number?)")
     unit_list.select_one('tr').decompose()
     units: classes.Unit = []
     for unit in unit_list:
@@ -154,16 +162,17 @@ def get_incident_units(request: Request, incident_number: str, use_12_hour_time:
 
 @app.get("/incident/{incident_number}/location", tags=["Incidents"], response_model=classes.Location, description="This endpoint pulls from [data.seattle.gov](data.seattle.gov) if the incident is recent, otherwise it will fall back to geocoding the address using Geopy/Nominatim. Check the \"source\" element to check which one was used.")
 @limiter.limit(config.rate_limit)
-def get_incident_coordinates(request: Request, incident_number: str):
+def get_incident_coordinates(request: Request, incident_number: str, use_official_api: bool = True):
     list_response = requests.get(location_listing_url)
     data = json.loads(list_response.text) # Cannot use list_response.json() for some reason?
     location = classes.Location()
-    for entry in data:
-        if entry['incident_number'] == incident_number: # Use coordinates provided officially by API
-            location.latitude = float(entry['latitude'])
-            location.longitude = float(entry['longitude'])
-            location.source = "data.seattle.gov"
-            break
+    if use_official_api:
+        for entry in data:
+            if entry['incident_number'] == incident_number: # Use coordinates provided officially by API
+                location.latitude = float(entry['latitude'])
+                location.longitude = float(entry['longitude'])
+                location.source = "data.seattle.gov"
+                break
     if location.latitude == None: # Fall back to geocoding the address
         details = get_incident_details(request, incident_number)
         location_data = geolocator.geocode(details.address + " Seattle, WA")
